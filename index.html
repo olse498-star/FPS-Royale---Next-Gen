@@ -293,6 +293,21 @@
     <button class="btn-danger" onclick="showMenu('menu-main')" style="margin-top: 20px;">Back</button>
 </div>
 
+<!-- ADDED: Pre-Game Lobby Menu -->
+<div id="menu-lobby" class="menu-overlay" style="display: none;">
+    <h1 class="title">LOBBY</h1>
+    <p class="subtitle">Room Code: <span id="lobby-code" style="color: #f1c40f; font-weight: bold; font-family: monospace; font-size: 1.5em; letter-spacing: 5px;"></span></p>
+    <div class="box" style="flex-direction: column; width: 400px; max-height: 400px;">
+        <h3>Players (<span id="lobby-count">1</span>/50)</h3>
+        <div id="lobby-players" style="width: 100%; max-height: 250px; overflow-y: auto; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 4px; border: 1px solid #555; text-transform: uppercase; font-family: monospace; font-size: 18px; color: #fff;">
+            <!-- Player list populated here -->
+        </div>
+        <button id="btn-start-match" class="btn-main btn-secondary" style="width: 100%; margin-top: 15px;" onclick="hostStartMatch()">Deploy to Arena</button>
+        <p id="lobby-waiting-text" style="display: none; color: #aaa; margin-top: 15px; text-transform: uppercase;">Waiting for host to deploy...</p>
+    </div>
+    <button class="btn-danger" onclick="leaveLobby()" style="margin-top: 20px;">Leave Lobby</button>
+</div>
+
 <!-- Death Screen -->
 <div id="menu-death" class="menu-overlay" style="display: none;">
     <h1 class="title" id="o-title">ELIMINATED</h1>
@@ -314,6 +329,10 @@
     let networkPlayersData = {}; // Stores latest data from all clients
     let myClientId = Math.random().toString(36).substr(2, 9);
     
+    // ADDED: Lobby State tracking
+    let lobbyPlayers = [];
+    let inLobby = false;
+
     // ADDED: Mobile Detection & Mute State
     const isMobileDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
     let isMuted = false;
@@ -656,6 +675,55 @@
         document.getElementById(menuId).style.display = 'flex';
     };
 
+    // ADDED: Helper functions for the Lobby UI
+    function showLobbyUI(isHost) {
+        inLobby = true;
+        showMenu('menu-lobby');
+        document.getElementById('lobby-code').innerText = currentRoomId;
+        if (isHost) {
+            document.getElementById('btn-start-match').style.display = 'block';
+            document.getElementById('lobby-waiting-text').style.display = 'none';
+        } else {
+            document.getElementById('btn-start-match').style.display = 'none';
+            document.getElementById('lobby-waiting-text').style.display = 'block';
+        }
+        updateLobbyUI();
+    }
+
+    function updateLobbyUI() {
+        document.getElementById('lobby-count').innerText = lobbyPlayers.length;
+        const list = document.getElementById('lobby-players');
+        list.innerHTML = '';
+        lobbyPlayers.forEach(p => {
+            const el = document.createElement('div');
+            el.style.padding = '8px';
+            el.style.borderBottom = '1px solid #444';
+            let label = `MECH-${p.id.substring(0,4)}`;
+            if (p.isHost) label += ' <span style="color: #f1c40f;">[HOST]</span>';
+            if (p.id === myClientId) label += ' <span style="color: #00ffff;">(YOU)</span>';
+            el.innerHTML = label;
+            list.appendChild(el);
+        });
+    }
+
+    function broadcastLobbyState() {
+        connections.forEach(conn => {
+            if (conn.open) conn.send({ type: 'lobby_update', payload: lobbyPlayers });
+        });
+    }
+
+    window.hostStartMatch = () => {
+        connections.forEach(conn => {
+            if (conn.open) conn.send({ type: 'start_game' });
+        });
+        startGame('host');
+    };
+
+    window.leaveLobby = () => {
+        cleanupNetwork();
+        showMenu('menu-main');
+    };
+
     window.startHosting = () => {
         document.getElementById('auth-loading').innerText = "Opening Port...";
         document.getElementById('auth-loading').style.display = 'block';
@@ -665,11 +733,21 @@
         
         peer.on('open', (id) => {
             console.log("Hosting on room:", id);
-            startGame('host');
+            document.getElementById('auth-loading').style.display = 'none';
+            lobbyPlayers = [{ id: myClientId, isHost: true }];
+            showLobbyUI(true);
         });
         
         peer.on('connection', (conn) => {
             connections.push(conn);
+            
+            // Add to lobby and broadcast to everyone
+            lobbyPlayers.push({ id: conn.peer, isHost: false });
+            if (inLobby) {
+                updateLobbyUI();
+                broadcastLobbyState();
+            }
+
             conn.on('data', (data) => {
                 if (data.type === 'player_update') {
                     networkPlayersData[conn.peer] = data.payload;
@@ -677,12 +755,19 @@
             });
             conn.on('close', () => {
                 connections = connections.filter(c => c !== conn);
-                delete networkPlayersData[conn.peer];
-                let idx = entities.findIndex(e => e.id === conn.peer);
-                if (idx !== -1) {
-                    entities[idx].triggerDeath(true);
-                    let bx, bz; do { bx = (Math.random() - 0.5) * MAP_SIZE * 0.9; bz = (Math.random() - 0.5) * MAP_SIZE * 0.9; } while (Math.hypot(bx, bz) < 300);
-                    entities.push(new Bot(bx, bz)); // Host replaces DC'd player with a bot
+                lobbyPlayers = lobbyPlayers.filter(p => p.id !== conn.peer);
+                
+                if (inLobby) {
+                    updateLobbyUI();
+                    broadcastLobbyState();
+                } else {
+                    delete networkPlayersData[conn.peer];
+                    let idx = entities.findIndex(e => e.id === conn.peer);
+                    if (idx !== -1) {
+                        entities[idx].triggerDeath(true);
+                        let bx, bz; do { bx = (Math.random() - 0.5) * MAP_SIZE * 0.9; bz = (Math.random() - 0.5) * MAP_SIZE * 0.9; } while (Math.hypot(bx, bz) < 300);
+                        entities.push(new Bot(bx, bz)); // Host replaces DC'd player with a bot
+                    }
                 }
             });
         });
@@ -699,16 +784,22 @@
             document.getElementById('auth-loading').innerText = "Connecting to Host...";
             document.getElementById('auth-loading').style.display = 'block';
             
-            currentRoomId = code;
             peer = new Peer(myClientId);
             
             peer.on('open', () => {
-                hostConnection = peer.connect(currentRoomId);
+                hostConnection = peer.connect(code);
                 hostConnection.on('open', () => {
-                    startGame('client');
+                    currentRoomId = code;
+                    document.getElementById('auth-loading').style.display = 'none';
+                    showLobbyUI(false);
                 });
                 hostConnection.on('data', (data) => {
-                    if (data.type === 'host_update') {
+                    if (data.type === 'lobby_update') {
+                        lobbyPlayers = data.payload;
+                        updateLobbyUI();
+                    } else if (data.type === 'start_game') {
+                        startGame('client');
+                    } else if (data.type === 'host_update') {
                         processHostData(data.payload);
                     }
                 });
@@ -1225,6 +1316,7 @@
     // --- GAME LOGIC ---
     window.startGame = (mode) => {
         gameMode = mode;
+        inLobby = false; // Add this line so game knows we left the lobby
         document.querySelectorAll('.menu-overlay').forEach(m => m.style.display = 'none');
         document.getElementById('ui').style.display = 'block';
         
@@ -1273,6 +1365,8 @@
         connections.forEach(c => c.close()); connections = [];
         if(peer) { peer.destroy(); peer = null; }
         networkPlayersData = {};
+        lobbyPlayers = [];
+        inLobby = false;
         document.getElementById('auth-loading').style.display = 'none';
     }
 
