@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FPS Royale - Next Gen</title>
+    <!-- ADDED: PeerJS for easy P2P Multiplayer -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <!-- Import Map for Three.js -->
     <script type="importmap">
         {
@@ -257,38 +259,20 @@
 
 <!-- Multiplayer Menu -->
 <div id="menu-multiplayer" class="menu-overlay" style="display: none;">
-    <h1 class="title">MULTIPLAYER</h1>
+    <h1 class="title">MULTIPLAYER (P2P)</h1>
     <div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1000px;">
         <!-- Host Game Box -->
-        <div class="box" style="flex-direction: column; width: 350px;">
+        <div class="box" style="flex-direction: column; width: 350px; text-align: center;">
             <h3>Host Server</h3>
-            <div class="form-group">
-                <label>Server Name</label>
-                <input type="text" id="host-name" value="Mech Arena" maxlength="15">
-            </div>
-            <div class="form-group">
-                <label>Max Real Players (Bots will fill to 50)</label>
-                <input type="number" id="host-max" value="10" min="2" max="50">
-            </div>
-            <div class="form-group">
-                <label>Visibility</label>
-                <select id="host-vis">
-                    <option value="public">Public (Server Browser)</option>
-                    <option value="private">Private (Code Required)</option>
-                </select>
-            </div>
-            <button class="btn-main btn-secondary" style="font-size: 18px; width: 100%; margin:0;" onclick="startHosting()">Start Hosting</button>
+            <p style="color: #aaa; font-size: 14px; text-transform: none;">Create a room and invite your friends via a 6-letter room code. No server setup required!</p>
+            <button class="btn-main btn-secondary" style="font-size: 18px; width: 100%; margin-top:15px;" onclick="startHosting()">Start Hosting</button>
         </div>
 
         <!-- Join Game Box -->
-        <div class="box" style="flex-direction: column; width: 450px;">
-            <h3>Join Public Server</h3>
-            <div id="server-list" style="width: 100%; height: 200px; overflow-y: auto; border: 1px solid #555; background: rgba(0,0,0,0.5); padding: 5px; margin-bottom: 15px; border-radius: 4px;">
-                <div style="text-align: center; color: #888; margin-top: 80px;">Searching for servers...</div>
-            </div>
-            <hr style="border-color: rgba(255,255,255,0.1); width: 100%;">
-            <h3>Join Private Server</h3>
-            <div style="display: flex; width: 100%; gap: 10px;">
+        <div class="box" style="flex-direction: column; width: 450px; text-align: center;">
+            <h3>Join Server</h3>
+            <p style="color: #aaa; font-size: 14px; text-transform: none;">Enter a friend's room code to connect directly to their match.</p>
+            <div style="display: flex; width: 100%; gap: 10px; margin-top: 15px;">
                 <input type="text" id="join-code" placeholder="Enter Room Code" style="margin-bottom: 0;">
                 <button class="btn-main" style="margin: 0; min-width: 100px; font-size: 16px; padding: 10px;" onclick="joinPrivate()">Join</button>
             </div>
@@ -310,72 +294,17 @@
     import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
     import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
     
-    // Firebase Imports
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-    import { getAuth, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-    import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, deleteDoc, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-    // --- FIREBASE SETUP ---
-    // To host this on GitHub Pages, you need your own free database!
-    // 1. Go to firebase.google.com and create a free project.
-    // 2. Add a "Web App" to the project to get your config settings.
-    // 3. Enable "Anonymous" sign-in in Firebase Authentication.
-    // 4. Create a Firestore Database in test mode.
-    // 5. Paste your settings right here:
-    const myFirebaseConfig = {
-        apiKey: "PASTE_YOUR_API_KEY_HERE",
-        authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-        projectId: "PASTE_YOUR_PROJECT_ID",
-        storageBucket: "PASTE_YOUR_PROJECT_ID.appspot.com",
-        messagingSenderId: "PASTE_YOUR_SENDER_ID",
-        appId: "PASTE_YOUR_APP_ID"
-    };
-
-    // Use the chat's temporary database if we are here, otherwise use your custom database!
-    let activeConfig = null;
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        activeConfig = JSON.parse(__firebase_config);
-    } else if (myFirebaseConfig.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
-        activeConfig = myFirebaseConfig;
-    }
-
-    const firebaseConfig = activeConfig;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'mech-royale';
-    let app, auth, db, currentUser;
-
-    if (firebaseConfig) {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-        
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                currentUser = auth.currentUser;
-                document.getElementById('auth-loading').style.display = 'none';
-                document.getElementById('main-actions').style.display = 'flex';
-                initServerBrowser();
-            } catch(e) {
-                console.error("Auth Error:", e);
-                document.getElementById('auth-loading').innerText = "Network Unavailable. Solo play only.";
-                setTimeout(() => {
-                    document.getElementById('auth-loading').style.display = 'none';
-                    document.getElementById('main-actions').style.display = 'flex';
-                    // Hide online button if auth fails
-                    document.querySelector('#main-actions button.btn-secondary').style.display = 'none';
-                }, 2000);
-            }
-        };
-        document.getElementById('auth-loading').style.display = 'block';
-        document.getElementById('main-actions').style.display = 'none';
-        initAuth();
-    } else {
-        document.querySelector('#main-actions button.btn-secondary').style.display = 'none';
-    }
+    // --- PEERJS MULTIPLAYER SETUP ---
+    // Replaced Firebase with PeerJS for easy, free, P2P networking!
+    let peer = null;
+    let connections = []; // For Host
+    let hostConnection = null; // For Client
+    let networkPlayersData = {}; // Stores latest data from all clients
+    let myClientId = Math.random().toString(36).substr(2, 9);
+    
+    // Immediately show the menu since we don't need auth anymore
+    document.getElementById('auth-loading').style.display = 'none';
+    document.getElementById('main-actions').style.display = 'flex';
 
     // --- PROCEDURAL AUDIO ---
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -697,51 +626,72 @@
         document.getElementById(menuId).style.display = 'flex';
     };
 
-    let lobbiesUnsub = null;
-    function initServerBrowser() {
-        if(!db || lobbiesUnsub) return;
-        lobbiesUnsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'lobbies'), (snapshot) => {
-            const list = document.getElementById('server-list');
-            list.innerHTML = '';
-            let count = 0;
-            snapshot.forEach(docSnap => {
-                const data = docSnap.data();
-                if(data.isPublic && data.status !== 'closed') {
-                    count++;
-                    const item = document.createElement('div');
-                    item.className = 'server-item';
-                    item.innerHTML = `
-                        <div class="server-name">${data.name} <span style="font-size:12px; color:#aaa;">(${docSnap.id})</span></div>
-                        <div class="server-players">${data.playerCount} / ${data.maxPlayers} <button class="btn-main btn-secondary" style="font-size:14px; padding: 5px 15px; min-width:auto; margin:0 0 0 15px;" onclick="joinPublic('${docSnap.id}')">JOIN</button></div>
-                    `;
-                    list.appendChild(item);
-                }
-            });
-            if(count===0) list.innerHTML = '<div style="text-align: center; color: #888; margin-top: 80px;">No public servers found. Host one!</div>';
-        }, (err) => console.error("Lobby fetch err:", err));
-    }
-
-    window.startHosting = async () => {
-        if(!currentUser) return alert("Must be connected to host!");
-        const name = document.getElementById('host-name').value || "Mech Arena";
-        const max = parseInt(document.getElementById('host-max').value) || 10;
-        const isPublic = document.getElementById('host-vis').value === 'public';
+    window.startHosting = () => {
+        document.getElementById('auth-loading').innerText = "Opening Port...";
+        document.getElementById('auth-loading').style.display = 'block';
         
         currentRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        maxServerPlayers = max;
+        peer = new Peer(currentRoomId); // Register this specific code
         
-        try {
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentRoomId), {
-                hostId: currentUser.uid, name: name, isPublic: isPublic, maxPlayers: max, playerCount: 1, status: 'playing', createdAt: Date.now()
-            });
+        peer.on('open', (id) => {
+            console.log("Hosting on room:", id);
             startGame('host');
-        } catch(e) { console.error(e); alert("Failed to host server."); }
+        });
+        
+        peer.on('connection', (conn) => {
+            connections.push(conn);
+            conn.on('data', (data) => {
+                if (data.type === 'player_update') {
+                    networkPlayersData[conn.peer] = data.payload;
+                }
+            });
+            conn.on('close', () => {
+                connections = connections.filter(c => c !== conn);
+                delete networkPlayersData[conn.peer];
+                let idx = entities.findIndex(e => e.id === conn.peer);
+                if (idx !== -1) {
+                    entities[idx].triggerDeath(true);
+                    let bx, bz; do { bx = (Math.random() - 0.5) * MAP_SIZE * 0.9; bz = (Math.random() - 0.5) * MAP_SIZE * 0.9; } while (Math.hypot(bx, bz) < 300);
+                    entities.push(new Bot(bx, bz)); // Host replaces DC'd player with a bot
+                }
+            });
+        });
+        
+        peer.on('error', (err) => { 
+            alert("Host error: " + err); 
+            document.getElementById('auth-loading').style.display = 'none';
+        });
     };
 
-    window.joinPublic = (roomId) => { currentRoomId = roomId; startGame('client'); };
     window.joinPrivate = () => {
         const code = document.getElementById('join-code').value.trim().toUpperCase();
-        if(code) { currentRoomId = code; startGame('client'); }
+        if(code) {
+            document.getElementById('auth-loading').innerText = "Connecting to Host...";
+            document.getElementById('auth-loading').style.display = 'block';
+            
+            currentRoomId = code;
+            peer = new Peer(myClientId);
+            
+            peer.on('open', () => {
+                hostConnection = peer.connect(currentRoomId);
+                hostConnection.on('open', () => {
+                    startGame('client');
+                });
+                hostConnection.on('data', (data) => {
+                    if (data.type === 'host_update') {
+                        processHostData(data.payload);
+                    }
+                });
+                hostConnection.on('close', () => {
+                    alert("Host disconnected or match ended.");
+                    returnToMain();
+                });
+            });
+            peer.on('error', (err) => { 
+                alert("Connection failed. Check code."); 
+                document.getElementById('auth-loading').style.display = 'none';
+            });
+        }
     };
 
     window.returnToMain = () => {
@@ -1281,108 +1231,116 @@
 
     function cleanupNetwork() {
         if(syncInterval) clearInterval(syncInterval);
-        if(unsubscribePlayers) unsubscribePlayers();
-        if(unsubscribeState) unsubscribeState();
-        syncInterval = null; unsubscribePlayers = null; unsubscribeState = null;
-        if(gameMode === 'host' && currentRoomId) {
-            deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentRoomId)).catch(e=>console.error(e));
-        }
+        syncInterval = null;
+        if(hostConnection) { hostConnection.close(); hostConnection = null; }
+        connections.forEach(c => c.close()); connections = [];
+        if(peer) { peer.destroy(); peer = null; }
+        networkPlayersData = {};
+        document.getElementById('auth-loading').style.display = 'none';
     }
 
     function setupNetwork() {
-        // Listen to other players
-        unsubscribePlayers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomId}_players`), snapshot => {
-            snapshot.docChanges().forEach(change => {
-                if (change.type === 'added' || change.type === 'modified') {
-                    if (change.doc.id === currentUser.uid) return; // Skip self
-                    const data = change.doc.data();
-                    let ent = entities.find(e => e.id === change.doc.id);
-                    if (!ent) {
-                        ent = new NetworkPlayer(change.doc.id, data.x, data.z);
-                        entities.push(ent);
-                        // If Host, remove a bot to make room
-                        if (gameMode === 'host') {
-                            const bots = entities.filter(e => e.isBot && !e.isDead);
-                            if (bots.length > 0 && entities.length > TOTAL_PLAYERS) {
-                                bots[0].triggerDeath(true); // Silent kill
-                            }
-                        }
-                    }
-                    ent.syncData(data);
-                } else if (change.type === 'removed') {
-                    let idx = entities.findIndex(e => e.id === change.doc.id);
-                    if (idx !== -1) {
-                        entities[idx].triggerDeath(true);
-                        // If Host, add a bot back
-                        if (gameMode === 'host') {
-                            let bx, bz; do { bx = (Math.random() - 0.5) * MAP_SIZE * 0.9; bz = (Math.random() - 0.5) * MAP_SIZE * 0.9; } while (Math.hypot(bx, bz) < 300);
-                            entities.push(new Bot(bx, bz));
-                        }
-                    }
-                }
-            });
-            updateUI();
-        });
-
-        // Listen to Host State (if Client)
-        if (gameMode === 'client') {
-            unsubscribeState = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomId}_state`, 'hostData'), docSnap => {
-                if (!docSnap.exists()) return;
-                const data = docSnap.data();
-                
-                // Sync Storm
-                if(data.storm) {
-                    stormData.x = data.storm.x; stormData.z = data.storm.z; stormData.radius = data.storm.r;
-                }
-
-                // Sync Bots
-                if(data.bots) {
-                    data.bots.forEach(bData => {
-                        let bot = entities.find(e => e.id === bData.id);
-                        if (!bot) {
-                            bot = new Bot(bData.x, bData.z, bData.id); entities.push(bot);
-                        }
-                        if(bData.hp <= 0 && !bot.isDead) bot.triggerDeath(false);
-                        else if (!bot.isDead) {
-                            bot.mesh.position.x = bData.x; bot.mesh.position.z = bData.z;
-                            bot.mesh.position.y = getTerrainHeight(bData.x, bData.z);
-                            bot.mesh.rotation.y = bData.yaw; bot.torsoAnchor.rotation.x = bData.pitch;
-                            bot.applyAnim(0.1, bData.anim === 'walk');
-                            if(bData.shotId && bData.shotId !== bot.lastShotSync) {
-                                bot.lastShotSync = bData.shotId; bot.shoot();
-                            }
-                        }
-                    });
-                }
-            });
-        }
-
         // Write State Interval (10fps)
         syncInterval = setInterval(() => {
             if (isGameOver) return;
-            // Write Player State
-            setDoc(doc(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomId}_players`, currentUser.uid), {
+            
+            // Build my payload
+            const myPayload = {
                 x: Math.round(pState.x), z: Math.round(pState.z), yaw: Number(yaw.toFixed(2)), pitch: Number(pitch.toFixed(2)),
                 animState: pState.animState, health: Math.round(pState.health), lastShotId: localShotCounter
-            });
+            };
 
-            // Write Host State
+            // If Client, send to Host
+            if (gameMode === 'client' && hostConnection && hostConnection.open) {
+                hostConnection.send({ type: 'player_update', payload: myPayload });
+            }
+
+            // If Host, broadcast EVERYTHING to Clients
             if (gameMode === 'host') {
+                // Include host as a player in the network data
+                networkPlayersData[myClientId] = myPayload;
+
+                // Visually sync players the host is receiving data for
+                Object.keys(networkPlayersData).forEach(pId => {
+                    if (pId !== myClientId) {
+                        let ent = entities.find(e => e.id === pId);
+                        if (!ent) {
+                            const d = networkPlayersData[pId];
+                            ent = new NetworkPlayer(pId, d.x, d.z);
+                            entities.push(ent);
+                            // Remove a bot to make room
+                            const bots = entities.filter(e => e.isBot && !e.isDead);
+                            if (bots.length > 0 && entities.length > TOTAL_PLAYERS) bots[0].triggerDeath(true);
+                        }
+                        ent.syncData(networkPlayersData[pId]);
+                    }
+                });
+
                 const botsPayload = entities.filter(e => e.isBot && !e.isDead).map(b => ({
                     id: b.id, x: Math.round(b.mesh.position.x), z: Math.round(b.mesh.position.z),
                     yaw: Number((b.syncYaw || 0).toFixed(2)), pitch: Number((b.syncPitch || 0).toFixed(2)), hp: Math.round(b.health),
                     anim: b.animState || 'idle', shotId: b.lastShotId || null
                 }));
-                setDoc(doc(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomId}_state`, 'hostData'), {
+
+                const hostPayload = {
                     storm: { x: Math.round(stormData.x), z: Math.round(stormData.z), r: Math.round(stormData.radius) },
-                    bots: botsPayload
+                    bots: botsPayload,
+                    players: networkPlayersData
+                };
+
+                connections.forEach(conn => {
+                    if (conn.open) conn.send({ type: 'host_update', payload: hostPayload });
                 });
-                
-                // Update lobby player count
-                const realPlayers = entities.filter(e => !e.isBot && !e.isDead).length + 1;
-                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lobbies', currentRoomId), { playerCount: realPlayers }, {merge: true});
             }
         }, 100);
+    }
+
+    function processHostData(data) {
+        // Sync Storm
+        if(data.storm) {
+            stormData.x = data.storm.x; stormData.z = data.storm.z; stormData.radius = data.storm.r;
+        }
+
+        // Sync Bots
+        if(data.bots) {
+            data.bots.forEach(bData => {
+                let bot = entities.find(e => e.id === bData.id);
+                if (!bot) {
+                    bot = new Bot(bData.x, bData.z, bData.id); entities.push(bot);
+                }
+                if(bData.hp <= 0 && !bot.isDead) bot.triggerDeath(false);
+                else if (!bot.isDead) {
+                    bot.mesh.position.x = bData.x; bot.mesh.position.z = bData.z;
+                    bot.mesh.position.y = getTerrainHeight(bData.x, bData.z);
+                    bot.mesh.rotation.y = bData.yaw; bot.torsoAnchor.rotation.x = bData.pitch;
+                    bot.applyAnim(0.1, bData.anim === 'walk');
+                    if(bData.shotId && bData.shotId !== bot.lastShotSync) {
+                        bot.lastShotSync = bData.shotId; bot.shoot();
+                    }
+                }
+            });
+        }
+        
+        // Sync Players
+        if(data.players) {
+            Object.keys(data.players).forEach(pId => {
+                if (pId === myClientId) return; // Skip self
+                const pData = data.players[pId];
+                let ent = entities.find(e => e.id === pId);
+                if (!ent) {
+                    ent = new NetworkPlayer(pId, pData.x, pData.z);
+                    entities.push(ent);
+                }
+                ent.syncData(pData);
+            });
+            
+            // Clean up disconnected players visually
+            entities.forEach(e => {
+                if (!e.isBot && e.id !== myClientId && !data.players[e.id]) {
+                    e.triggerDeath(true);
+                }
+            });
+        }
     }
 
     function updatePlayer(dt) {
