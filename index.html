@@ -532,9 +532,9 @@
         
         // Hardcode the aspect ratio so it matches the CSS 180x300 size perfectly
         previewCamera = new THREE.PerspectiveCamera(40, 180 / 300, 0.1, 100);
-        // FIX: Centered the initial camera view on the chest (y=14) instead of the hips (y=11)
-        previewCamera.position.set(0, 14, 40); 
-        previewCamera.lookAt(0, 14, 0);
+        // FIX: Centered the initial camera view lower (y=5)
+        previewCamera.position.set(0, 5, 40); 
+        previewCamera.lookAt(0, 5, 0);
         
         previewRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
         previewRenderer.setSize(180, 300); // Enforce rigid size limit in WebGL
@@ -1585,10 +1585,10 @@
             if (!isDraggingPrev) previewYaw -= 0.5 * dt; 
             
             previewCamera.position.x = Math.sin(previewYaw) * Math.cos(previewPitch) * previewDist;
-            // FIX: Centered the orbiting anchor point to y=14
-            previewCamera.position.y = 14 + Math.sin(previewPitch) * previewDist;
+            // FIX: Centered the orbiting anchor point to y=5
+            previewCamera.position.y = 5 + Math.sin(previewPitch) * previewDist;
             previewCamera.position.z = Math.cos(previewYaw) * Math.cos(previewPitch) * previewDist;
-            previewCamera.lookAt(0, 14, 0);
+            previewCamera.lookAt(0, 5, 0);
 
             previewBot.updatePreview(dt, time, previewAnimState, previewGlow);
             
