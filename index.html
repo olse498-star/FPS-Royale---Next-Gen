@@ -721,7 +721,7 @@
 
     window.leaveLobby = () => {
         cleanupNetwork();
-        showMenu('menu-main');
+        window.location.reload(); // FIX: Completely resets the game state
     };
 
     window.startHosting = () => {
@@ -739,14 +739,17 @@
         });
         
         peer.on('connection', (conn) => {
-            connections.push(conn);
-            
-            // Add to lobby and broadcast to everyone
-            lobbyPlayers.push({ id: conn.peer, isHost: false });
-            if (inLobby) {
-                updateLobbyUI();
-                broadcastLobbyState();
-            }
+            // FIX 1: Wait for the connection to fully open before sending lobby data!
+            conn.on('open', () => {
+                connections.push(conn);
+                
+                // Add to lobby and broadcast to everyone
+                lobbyPlayers.push({ id: conn.peer, isHost: false });
+                if (inLobby) {
+                    updateLobbyUI();
+                    broadcastLobbyState();
+                }
+            });
 
             conn.on('data', (data) => {
                 if (data.type === 'player_update') {
@@ -817,7 +820,7 @@
 
     window.returnToMain = () => {
         cleanupNetwork();
-        showMenu('menu-main');
+        window.location.reload(); // FIX: Completely wipes the 3D engine and restores menu
     };
 
     // --- CLASSES ---
@@ -1327,7 +1330,11 @@
             document.getElementById('room-code-panel').style.display = 'none';
         }
 
-        cleanupNetwork();
+        // FIX 2: Removed cleanupNetwork() here. It was completely destroying the 
+        // active multiplayer connection the moment the host hit "Deploy to Arena"!
+        if (syncInterval) clearInterval(syncInterval);
+        syncInterval = null;
+
         entities.forEach(e => scene.remove(e.mesh)); projectiles.forEach(p => scene.remove(p.mesh)); particles.forEach(p => scene.remove(p.mesh));
         entities = []; projectiles = []; particles = [];
         isGameOver = false;
